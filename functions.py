@@ -3,10 +3,17 @@
 
 """
 
-from packages import *
-from parameters import *
+#from packages import *
+#from parameters import *
 
-def A_(Gpp):
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.ops import nn
+
+
+
+
+def A_(Gpp, Pp=10.0, tau=0.25):
     """
       Compute the QoS (A).
       Parameters:
@@ -40,7 +47,7 @@ def calculateDistance(x1, y1, x2, y2):
      dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)  
      return dist 
 
-def FDFR(Alpha, Ps, Gsr, Gpr):
+def FDFR(Alpha, Ps, Gsr, Gpr, Pp=10.0):
   """
       This function calculate the different parameters using Gekko.
 
@@ -53,7 +60,7 @@ def FDFR(Alpha, Ps, Gsr, Gpr):
   """
   return (Gsr*(1-Alpha**2)*Ps**2)/(Gpr*Pp+1)
 
-def FDF2(Alpha, Ps, Pr, Pp, Gss, Grs, Gps):
+def FDF2(Alpha, Ps, Pr, Gss, Grs, Gps, Pp=10.0):
     """
       This function calculate the different parameters using Gekko.
 
@@ -174,4 +181,5 @@ def history_extraction(Lambda, key):
         data.append(temp)
         temp  = []
     return data
+
 
