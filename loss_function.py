@@ -7,7 +7,7 @@ import tensorflow as tf
 
 
 
-def loss_DF_WN(Lambda, v_tau):
+def loss_DF_WN(Lambda=10**0.5, v_tau=0.25):
   def DF_loss(G, y_out):
     ''' compute loss without normalization'''
     Tau = tf.constant(v_tau, dtype=tf.float32) # ==> Tau 
