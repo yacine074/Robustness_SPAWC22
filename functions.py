@@ -9,6 +9,14 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import nn
+from multiprocessing import Pool
+
+from utils import *
+
+from optimization import *
+
+
+
 
 
 
@@ -181,5 +189,174 @@ def history_extraction(Lambda, key):
         data.append(temp)
         temp  = []
     return data
+
+def noise_to_channels_V1(X, channel_ID, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    '''
+    Parameters : 
+       
+        test_set :  test set containing the H channels
+    
+        col : list of index for the specific column to add noise
+    
+    Returns:
+    
+        channel gain ndarray container of noisy channels 
+
+    '''   
+   
+    var_X = np.var(X[:, channel_ID], axis=0, keepdims=True)
+    
+    noisy_gains = [] # list to store all the noisy H matrices with different level of noise variance
+    
+    for SNR_db in SNRs_db:
+        
+        SNR = np.power(10,SNR_db/10)
+        noises = np.sqrt(var_X/SNR)*np.random.normal(0.0, 1.0, (X.shape[0], len(channel_ID)))#len(secondary_ID)
+    
+        X_noised = X.copy()
+        X_noised[:, channel_ID] = X_noised[:, channel_ID] + noises
+        noisy_gains.append(X_noised)
+
+    return SNRs_db, np.asarray(noisy_gains, dtype="float64")
+
+
+
+def noise_to_channels(X, primary_ID, secondary_ID, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    '''
+    Parameters : 
+       
+        test_set :  test set containing the H channels
+    
+        col : list of index for the specific column to add noise
+    
+    Returns:
+    
+        channel gain ndarray container of noisy channels 
+
+    '''   
+   
+    #static_var_X = np.sqrt(np.var(X[:, primary_ID], axis=0))
+
+    #var_X = np.var(X[:, secondary_ID], axis=0, keepdims=True)
+    var_X = np.var(X[:, secondary_ID+primary_ID], axis=0, keepdims=True)
+    
+    noisy_gains = [] # list to store all the noisy H matrices with different level of noise variance
+    
+    for SNR_db in SNRs_db:
+        
+        SNR = np.power(10,SNR_db/10)
+        noises = np.sqrt(var_X/SNR)*np.random.normal(0.0, 1.0, (X.shape[0], len(secondary_ID+primary_ID)))#len(secondary_ID)
+    
+        X_noised = X.copy()
+        #X_noised[:, secondary_ID] = X_noised[:, secondary_ID] + noises
+        X_noised[:, secondary_ID+primary_ID] = X_noised[:, secondary_ID+primary_ID] + noises
+        #X_noised[:, primary_ID] = static_var_X
+        noisy_gains.append(X_noised)
+
+    return SNRs_db, np.asarray(noisy_gains, dtype="float64")
+
+
+#-------------------------------------CF----------------------------------------------------#
+
+def AS_A_squeeze_CF(x):
+    return CF_V4(x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
+
+def generate_benchmark_CF(H_matrix): 
+    '''
+    bruteforce for H without noise
+    '''
+    with Pool() as p:
+        BF_res =  p.map(AS_A_squeeze_CF, H_matrix)
+
+    return np.squeeze(np.asarray(BF_res, dtype="float64"))
+
+
+def AS_for_noisy_channels_CF(BH_matrix):
+    
+    '''
+    Compute bruteforce method for channel gain ndarray composed of noisy channels
+    '''
+
+    BF_res = [] # list containing channels and bruteforce results (Alpha,Pr,Ps) for each noisy matrix (0, 10^-1.5, 10^-1....) 
+    
+    
+    for i in range(BH_matrix.shape[0]) :
+        X = BH_matrix[i,:,:]
+        
+        temp_BF_res = generate_benchmark_CF(X)
+        
+        BF_res.append(temp_BF_res)
+
+        
+    return np.asarray(BF_res, dtype="float64")
+
+
+#----------------------------------------DF-------------------------------------------------#
+
+def BF_A(Grp, Gpp, Gsr, Gpr, Gss, Grs, Gsp, Gps, Pr_max = 10.0, Ps_max = 10.0, Pp = 10.0):
+    ''' Bruteforce with QoS constraint'''
+    Alpha = np.linspace(0, np.sqrt(1.0), 100)
+    Pr = np.linspace(0, np.sqrt(Pr_max), 100)
+    Ps = np.linspace(0, np.sqrt(Ps_max), 100)
+
+
+    A,B,C = np.meshgrid(Alpha, Pr, Ps)
+   
+    # if QoS constraint respected
+    mask = (((Gsp*C**2)+(Grp*B**2))+2*(np.sqrt(Gsp*Grp)*A*C*B)) <= A_(Gpp)
+
+    
+    A = A[mask]
+    B = B[mask]
+    C = C[mask]
+    
+    SNR1 = FDFR(A, C, Gsr, Gpr) 
+    SNR2 = FDF2(A, C, B, Gss, Grs, Gps, Pp)
+    SNR = np.minimum(SNR1,SNR2)
+
+    ind = np.argmax(SNR)
+
+    SNR_opt, alpha_opt, pr_opt, ps_opt = SNR[ind], A[ind], B[ind], C[ind]
+    c = lambda t: (1/2*np.log2(1+t))
+    c_func = np.vectorize(c)
+    
+    return np.array([[Grp, Gpp, Gsr, Gpr, Gss, Grs, Gsp, Gps, c_func(SNR_opt), alpha_opt**2, pr_opt**2, ps_opt**2]])
+
+def BF_A_squeeze_DF(x):
+    return BF_A(x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
+
+def generate_benchmark_DF(H_matrix): 
+    '''
+    bruteforce for H without noise
+    '''
+    with Pool() as p:
+        BF_res =  p.map(BF_A_squeeze_DF, np.power(H_matrix, 2))
+
+    return np.squeeze(np.asarray(BF_res, dtype="float64"))
+
+
+def bruteforce_for_noisy_channels_DF(BH_matrix):
+    
+    '''
+    Compute bruteforce method for channel gain ndarray composed of noisy channels
+    '''
+
+    BF_res = [] # list containing channels and bruteforce results (Alpha,Pr,Ps) for each noisy matrix (0, 10^-1.5, 10^-1....) 
+    
+    
+    for i in range(BH_matrix.shape[0]) :
+        X = BH_matrix[i,:,:]
+        
+        temp_BF_res = generate_benchmark_DF(X)
+        
+        BF_res.append(temp_BF_res)
+
+        
+    return np.asarray(BF_res, dtype="float64")
+
+
+#-----------------------------------------------------------------------------------------#
+
+
 
 
