@@ -12,7 +12,8 @@ import warnings
 
 from functions import *
 from loss_function import *
-
+from model_DL import *
+from DNN_metrics import *
 ### ### ### ### ### ### ### ### Debit metrics ### ### ### ### ### ### ### ### 
 
 def rate(Grp, Gpp, Gsr, Gpr, Gss, Grs, Gsp, Gps, Alpha, Pr, Ps, Pp=10.0) : #name debit_DF == > debit ==> rate
@@ -559,4 +560,642 @@ def results_grid(title, data, lambda_label, lr_label):
     ax.set_yticklabels(ax.get_yticklabels(), rotation = 0, fontsize = 10)
     plt.savefig(title, bbox_inches='tight')
 
+    
+#----------------------------------CF-------------------------------------------------------#
 
+def PARD_for_noisy_data_CF(datas, labels, Pp=10.0):
+    """
+    Calculate primary rate for Noisy H Matrix
+    """
+    H_matrix, mean_pard, max_pard, mean_outage_pard, outage_pard = [], [], [], [], []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix,labels) : 
+        
+        data , label = i[:,0:8], j[:,8:11]
+        
+        N_P_Rate = primary_rate_CF(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], label[:,0], label[:,1])
+        
+        P_Rate_max = C(data[:,1]**2*Pp) # data[:,1] tend for G_PP
+        temp_mean_pard, temp_max_pard, temp_mean_outage, outage = mean_max_outage_PARD(N_P_Rate, P_Rate_max)
+        mean_pard.append(temp_mean_pard)
+        max_pard.append(temp_max_pard)
+        mean_outage_pard.append(temp_mean_outage)
+        outage_pard.append(outage)
+    # doesn't multiply outage by 100    
+    return np.asarray(mean_pard, dtype="float64")*100, np.asarray(max_pard, dtype="float64")*100, np.asarray(mean_outage_pard, dtype="float64")*100, np.asarray(outage_pard, dtype="float64")*100
+
+
+
+
+def opportunistic_rate_for_noisy_channels_CF(datas, labels):
+    '''
+    Parameters: 
+        dataset : test_set
+        labels : For DNN estimations
+    '''
+    H_matrix = []
+    opportunistic_rate = []
+    # create H_matrix ( without noise ) for each noise level labels
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+        
+    # calculate rate for the same H with different labels based on noise level
+    for i,j in zip(H_matrix,labels) : 
+        data , label = i[:,0:8], j[:,8:12]
+        temp_rate = C(f_obj(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], label[:,0], label[:,1]))
+
+        opportunistic_rate.append(temp_rate)
+        
+    return np.asarray(opportunistic_rate, dtype="float64")
+
+
+
+def plot_CSI_Imperfect_Stats(res_stats, plot_lab, x_lab, y_lab, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    
+    fig, ax = plt.subplots(1,figsize=(15,7))
+
+    ax.plot(SNRs_db, res_stats, c = 'black',label= plot_lab)
+
+    ax.grid()
+
+    ax.scatter(SNRs_db[0],res_stats[0],label=r'$SNR=-10$',s=200,marker='v',linewidths=1)
+
+    ax.scatter(SNRs_db[1],res_stats[1],label=r'$SNR=-5}$',s=200,marker='o',linewidths=1)
+
+    ax.scatter(SNRs_db[2],res_stats[2],label=r'$SNR=0$',s=200,marker='D',linewidths=1)
+
+    ax.scatter(SNRs_db[3],res_stats[3],label='$SNR=5$',s=200,marker='H',linewidths=1)
+
+    ax.scatter(SNRs_db[4],res_stats[4],label='$SNR=10$',s=200,marker='d',linewidths=1)
+
+    ax.scatter(SNRs_db[5],res_stats[5],label='$SNR=15$',s=200,marker='P',linewidths=1)
+
+    ax.scatter(SNRs_db[6],res_stats[6],label='$SNR=20$',s=200,marker='<',linewidths=1)
+
+
+    ax.tick_params(axis='x', labelsize=16 )
+    ax.tick_params(axis='y', labelsize=16)
+
+    ax.legend(loc='best', fontsize=16)
+
+    plt.xlabel(x_lab, fontsize=24) #'Noise variance','Percentage'
+    plt.ylabel(y_lab, fontsize=24)
+    #plt.xscale('log')
+    
+
+    #fig.savefig('Datasetv2/Bruteforce/Dataset_for_BF/RAG_opportunistic_rate.pdf', bbox_inches='tight')
+
+
+def plot_ARPD(mean_ARPD, maximum_ARPD, mean_outage_ARPD, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    
+    fig, ax = plt.subplots(1,figsize=(15,7))
+
+    ax.plot(SNRs_db, maximum_ARPD, c = 'blue',label=r"$Max$",lw=2.5)
+    ax.plot(SNRs_db, mean_ARPD, c = 'red',label=r"$Mean$",lw=2.5)
+    ax.plot(SNRs_db, mean_outage_ARPD, c = 'gray',label=r"$Mean\; outage$",lw=2.5)
+
+    ax.grid()
+
+    xs = np.linspace(1, 10**1.5, 20)
+
+    plt.hlines(y=25, xmin=-10, xmax=len(xs), colors='black', linestyles='--', lw=2, label=r'$\tau = 25\%$')
+
+    ax.tick_params(axis='x', labelsize=16 )
+    ax.tick_params(axis='y', labelsize=16)
+
+
+
+    ax.legend(loc='upper center', fontsize=16)
+
+    plt.xlabel('SNR (dB)', fontsize=24)
+    plt.ylabel('Primary network degradation (%)', fontsize=24)
+    #plt.xscale('log')
+
+    #fig.savefig('Datasetv2/Bruteforce/Dataset_for_BF/PDD.pdf', bbox_inches='tight')
+
+    
+def primary_rate_CF(hR1, h11, h2R, h1R, h22, hR2, h21, h12, PR, PS, Pp=10.0):
+
+    R_P = C((h11**2*Pp)/(hR1**2*PR+h21**2*PS+1))
+
+    return R_P
+
+
+
+
+def mean_max_outage_PARD(N_P_Rate, Max_P_Rate, tau = 0.25):
+    '''
+    N_PRate : Primary rate based on bruteforce output (Alpha, Pr, Ps) where BF is computed using noisy channels 
+    Max_P_Rate : Primary rate without secondary users interference
+    '''
+    res = 1-(N_P_Rate/Max_P_Rate) # Compute of Delta
+    
+    #res = np.round(res,4)
+    mean_res = np.nanmean(res) # Mean of Delta 
+    max_res = np.max(res) # Max of Delta
+    #res =  # Outage
+    with warnings.catch_warnings():
+        warnings.filterwarnings('error')
+        try:
+            mean_outage = np.nanmean(res[res>tau])
+        except RuntimeWarning:
+            mean_outage = 0
+            
+    outage = np.nanmean(res>tau)
+    
+    return mean_res, max_res, mean_outage, outage
+
+
+
+
+
+def DNN_predictions_CF(NH_MATRIX, mw_path, Lambda=10**0.5, tau = 0.25):
+    '''
+    NH_MATRIX : Noisy H matrix 
+    '''
+    final_predictions = []
+   
+
+    model = tf.keras.models.load_model(mw_path, custom_objects={'CF_loss':loss_CF(Lambda,tau),\
+                                                                'Delta_DNN_CF':\
+                                                                Delta_DNN_CF,\
+                                                                'outage_percentage':\
+                                                                outage_percentage_CF,\
+                                                                                           
+                                                                'custom_sigmoid':custom_sigmoid,
+                                                                "opportunistic_rate":\
+                                                                Opportunistic_Achievable_Rate_CF(tau) })
+    
+    
+    for i in NH_MATRIX : 
+        data = i[:,0:8]
+        temp_predictions = model.predict(data)
+        final_predictions.append(temp_predictions)
+        
+    return np.asarray(final_predictions, dtype="float64")
+
+def opportunistic_rate_for_noisy_channels_DNN_CF(datas, labels):
+    '''
+    dataset : H matrix without noise
+    labels : predicted parameters (Alpha, Pr, Ps)
+    #  Warning : rate is computed using y_hat not sqrt(y_hat) like opportunistic_rate_for_noisy_channels function
+
+    '''
+    final_rate = []
+    H_matrix = []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix, labels): 
+        data , y_hat = i[:,0:8], j
+        temp_rate = C(f_obj(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], y_hat[:,0]**2, y_hat[:,1]**2))
+        final_rate.append(temp_rate)
+    return np.asarray(final_rate, dtype="float64")
+
+def primary_degradation_for_noisy_data_DNN_CF(datas, labels):
+    final_pdd = []
+    H_matrix = []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix, labels): 
+        data, y_hat = i[:,0:8], j
+        temp_pdd = primary_rate_CF(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], y_hat[:,0]**2, y_hat[:,1]**2)
+        final_pdd.append(temp_pdd)
+        
+    return np.asarray(final_pdd, dtype="float64")
+
+
+def PARD_for_noisy_data_DNN_CF(datas, labels, Pp = 10.0):
+    """
+    Calculate primary rate for Noisy H Matrix
+    """
+    H_matrix, mean_pard, max_pard, mean_outage_pard, outage_pard = [], [], [], [], []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix,labels) : 
+        
+        data , label = i[:,0:8], j # j not j[:,8:12]
+        # label for primary_rate not sqrt label
+        N_P_Rate = primary_rate_CF(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], label[:,0]**2, label[:,1]**2)
+
+        P_Rate_max = C(data[:,1]**2*Pp) # data[:,1] tend for G_PP
+
+        temp_mean_pard, temp_max_pard, temp_mean_outage, outage = mean_max_outage_PARD(N_P_Rate, P_Rate_max)
+        mean_pard.append(temp_mean_pard)
+        max_pard.append(temp_max_pard)
+        mean_outage_pard.append(temp_mean_outage)
+        outage_pard.append(outage)
+    # doesn't multiply outage by 100    
+    return np.asarray(mean_pard, dtype="float64")*100, np.asarray(max_pard, dtype="float64")*100, np.asarray(mean_outage_pard, dtype="float64")*100, np.asarray(outage_pard, dtype="float64")*100
+
+
+
+def DNN_for_noisy_channels_CF(X, X_noised_train, hyperparameters, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    #X_noised_train, X_noised_val,hyperparameters, noise_levels = [0, 10**-1.5, 10**-1, 10**-0.5, 1, 10**0.5, 10**1, 10**1.5]):
+    # SNRs_db = [-10, -5, 0, 5, 10, 15, 20]
+    final_DNN_results = []
+    
+    ind = 0
+    callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=20)
+    
+    
+    for x_noisy in X_noised_train : 
+
+        model = get_model_CF(x_noisy, loss_CF(hyperparameters["lambda"],\
+                                                 hyperparameters["tau"]),\
+                                                 hyperparameters["metrics"],\
+                                                 custom_sigmoid,\
+                                                 custom_sigmoid,\
+                                                 hyperparameters["learning_rate"])
+
+        history = model.fit(x_noisy, np.power(X, 2), epochs=hyperparameters["epochs"], batch_size=hyperparameters["batch_size"], validation_split=hyperparameters["validation_split"], callbacks=[callback])#validationhyperparameters["batch_size"]_split = VS
+        
+        model.save('weights_model/N_DNN_CF_'+str(SNRs_db[ind])+'.h5')
+        np.save('weights_model/N_DNN_CF_'+str(SNRs_db[ind]),history.history)
+        
+        ind+=1
+        
+def noised_DNN_pred_CF(X, mw_path, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    # SNRs_db = [-10, -5, 0, 5, 10, 15, 20]
+    final_predictions = []
+    tau = 0.25
+    for snr_item in SNRs_db : 
+        for noisy_X in X:
+            data = noisy_X[:,0:8]
+            model = tf.keras.models.load_model(mw_path+str(snr_item)+'.h5', custom_objects={'CF_loss':loss_CF(Lambda,tau),\
+                                                                'Delta_DNN_CF':Delta_DNN_CF,       
+                                                                 'custom_sigmoid':custom_sigmoid,
+                                                                 "opportunistic_rate":Opportunistic_Achievable_Rate_CF(tau),  
+                                                                 'outage_percentage':outage_percentage_CF   })
+            temp_predictions = model.predict(data)
+            final_predictions.append(temp_predictions)
+    
+    return np.asarray(final_predictions, dtype="float64")
+
+def plot_history_noised_DNN(path_to_history, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    # SNRs_db = [-10, -5, 0, 5, 10, 15, 20]
+    loss, val_loss = [], []
+    for item in SNRs_db:
+        history = np.load(path_to_history+str(item)+'.npy',allow_pickle='TRUE').item()
+        loss.append(history['loss'][:])
+        val_loss.append(history['val_loss'][:])
+    return loss, val_loss
+
+
+def db_gap_Dnn(acheivable_rate, acheivable_rate_bruteforce, mul):
+    
+    db_gap_DNN = np.array([relative_avreage_gap(acheivable_rate[mul,:],\
+                                                acheivable_rate_bruteforce[:])])
+    return db_gap_DNN*100
+
+def opportunistic_rate_for_noisy_channels_DNN(datas, labels):
+    '''
+    dataset : H matrix without noise
+    labels : predicted parameters (Alpha, Pr, Ps)
+    #  Warning : rate is computed using y_hat not sqrt(y_hat) like opportunistic_rate_for_noisy_channels function
+
+    '''
+    final_rate = []
+    H_matrix = []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix, labels): 
+        data , y_hat = i[:,0:8], j
+
+        temp_rate = C(f_obj(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], y_hat[:,0]**2, y_hat[:,1]**2))
+
+
+        final_rate.append(temp_rate)
+    return np.asarray(final_rate, dtype="float64")
+
+
+def PARD_for_noisy_data_DNN(datas, labels, Pp = 10.0):
+    """
+    Calculate primary rate for Noisy H Matrix
+    """
+    H_matrix, mean_pard, max_pard, mean_outage_pard, outage_pard = [], [], [], [], []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix,labels) : 
+        
+        data , label = i[:,0:8], j # j not j[:,8:12]
+        # label for primary_rate not sqrt label
+        N_P_Rate = primary_rate_CF(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], label[:,0]**2, label[:,1]**2)
+
+
+        P_Rate_max = C(data[:,1]**2*Pp) # data[:,1] tend for G_PP
+
+        temp_mean_pard, temp_max_pard, temp_mean_outage, outage = mean_max_outage_PARD(N_P_Rate, P_Rate_max)
+        mean_pard.append(temp_mean_pard)
+        max_pard.append(temp_max_pard)
+        mean_outage_pard.append(temp_mean_outage)
+        outage_pard.append(outage)
+    # doesn't multiply outage by 100    
+    return np.asarray(mean_pard, dtype="float64")*100, np.asarray(max_pard, dtype="float64")*100, np.asarray(mean_outage_pard, dtype="float64")*100, np.asarray(outage_pard, dtype="float64")*100
+
+
+
+
+
+
+
+def get_dnn_results(X, bruteforce_rate, SNR_ID= [0, 8, 16, 24, 32, 40, 48]): 
+    
+    rate_gap, max_pard, mean_pard, mean_outage_pard, outage_pard  = [], [], [], [], []
+    for ID in SNR_ID : 
+        rate_gap.append(db_gap_Dnn(X["opportunistic_rate"], bruteforce_rate, [ID])) #X[0]
+        mean_pard.append(X["mean_ARPD"][ID])
+        max_pard.append(X["max_ARPD"][ID])
+        mean_outage_pard.append(X["mean_outage"][ID])
+        outage_pard.append(X["outage_ARPD"][ID])
+    return rate_gap, mean_pard, max_pard, mean_outage_pard, outage_pard
+
+
+
+
+#------------------------------------------DF-----------------------------------------------#
+
+
+def opportunistic_rate_for_noisy_channels_DF(datas, labels):
+    '''
+    Parameters: 
+        dataset : test_set
+        labels : For DNN estimations
+    '''
+    H_matrix = []
+    opportunistic_rate = []
+    # create H_matrix ( without noise ) for each noise level labels
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+        
+    # calculate rate for the same H with different labels based on noise level
+    for i,j in zip(H_matrix,labels) : 
+        data , label = i[:,0:8], j[:,8:12]
+        temp_rate = rate(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], np.sqrt(label[:,1]), np.sqrt(label[:,2]), np.sqrt(label[:,3]))
+        opportunistic_rate.append(temp_rate)
+        
+    return np.asarray(opportunistic_rate, dtype="float64")
+
+def primary_rate_DF(Grp, Gpp, Gsr, Gpr, Gss, Grs, Gsp, Gps, Alpha, Pr, Ps, Pp=10.0):
+    """
+      Parameters:
+         Grp: 1D Array containing Alpha values.
+         Gpp: 1D Array containing Gain between primary transmitter and primary receiver.
+         Gsp: 1D Array containing Gain between secondary transmitter and primary receiver.
+         Alpha: 1D Array containing Alpha values.
+         Pr: 1D Array containing Power of relay.
+         Ps: 1D Array containing Power of secondary network.
+
+      Returns:
+         primary debit.
+
+    """
+    Rp = C((Gpp*Pp)/(Grp*Pr**2+Gsp*Ps**2+2*(np.sqrt(Gsp*Grp)*Ps*Pr*Alpha)+1))
+    return Rp
+
+
+
+def mean_max_outage_PARD_DF(N_P_Rate, Max_P_Rate, tau = 0.25):
+    '''
+    N_PRate : Primary rate based on bruteforce output (Alpha, Pr, Ps) where BF is computed using noisy channels 
+    Max_P_Rate : Primary rate without secondary users interference
+    '''
+    res = 1-(N_P_Rate/Max_P_Rate) # Compute of Delta
+    
+    #res = np.round(res,4)
+    mean_res = np.nanmean(res) # Mean of Delta 
+    max_res = np.max(res) # Max of Delta
+    #res =  # Outage
+    with warnings.catch_warnings():
+        warnings.filterwarnings('error')
+        try:
+            mean_outage = np.nanmean(res[res>tau])
+        except RuntimeWarning:
+            mean_outage = 0
+            
+    outage = np.nanmean(res>tau)
+    
+    return mean_res, max_res, mean_outage, outage
+
+
+def PARD_for_noisy_data_DF(datas, labels, Pp=10.0):
+    """
+    Calculate primary rate for Noisy H Matrix
+    """
+    H_matrix, mean_pard, max_pard, mean_outage_pard, outage_pard = [], [], [], [], []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix,labels) : 
+        
+        data , label = i[:,0:8], j[:,8:12]
+        
+        N_P_Rate = primary_rate_DF(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], np.sqrt(label[:,1]), np.sqrt(label[:,2]), np.sqrt(label[:,3]))
+        
+        P_Rate_max = C(data[:,1]*Pp) # data[:,1] tend for G_PP
+        temp_mean_pard, temp_max_pard, temp_mean_outage, outage = mean_max_outage_PARD(N_P_Rate, P_Rate_max)
+        mean_pard.append(temp_mean_pard)
+        max_pard.append(temp_max_pard)
+        mean_outage_pard.append(temp_mean_outage)
+        outage_pard.append(outage)
+    # doesn't multiply outage by 100    
+    return np.asarray(mean_pard, dtype="float64")*100, np.asarray(max_pard, dtype="float64")*100, np.asarray(mean_outage_pard, dtype="float64")*100, np.asarray(outage_pard, dtype="float64")*100
+
+def plot_ARPD_DF(mean_ARPD, maximum_ARPD, mean_outage_ARPD, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    
+    fig, ax = plt.subplots(1,figsize=(15,7))
+
+    ax.plot(SNRs_db, maximum_ARPD, c = 'blue',label=r"$Max$",lw=2.5)
+    ax.plot(SNRs_db, mean_ARPD, c = 'red',label=r"$Mean$",lw=2.5)
+    ax.plot(SNRs_db, mean_outage_ARPD, c = 'gray',label=r"$Mean\; outage$",lw=2.5)
+
+    ax.grid()
+
+    xs = np.linspace(1, 10**1.5, 20)
+
+    plt.hlines(y=25, xmin=-10, xmax=len(xs), colors='black', linestyles='--', lw=2, label=r'$\tau = 25\%$')
+
+
+    ax.tick_params(axis='x', labelsize=16 )
+    ax.tick_params(axis='y', labelsize=16)
+
+
+
+    ax.legend(loc='upper center', fontsize=16)
+
+    plt.xlabel('SNR (dB)', fontsize=24)
+    plt.ylabel('Primary network degradation (%)', fontsize=24)
+
+
+
+def DNN_predictions_DF(NH_MATRIX, mw_path, Lambda=10**0.5, tau = 0.25):
+    '''
+    NH_MATRIX : Noisy H matrix 
+    '''
+    final_predictions = []
+
+    model = tf.keras.models.load_model(mw_path, custom_objects={'DF_loss':loss_DF_WN(Lambda,tau),'Primary_Achievable_Rate_Degradation_DF':Primary_Achievable_Rate_Degradation_DF,'Primary_ARDP':Primary_ARD_Percentage_DF,'throughput':Achievable_Rate_DF(tau),'V_Qos':QoS_Violation_DF(tau), "custom_sigmoid":custom_sigmoid})
+    
+    for i in NH_MATRIX : 
+        data = i[:,0:8]
+        temp_predictions = model.predict(data)
+        final_predictions.append(temp_predictions)
+        
+    return np.asarray(final_predictions, dtype="float64")
+
+
+def opportunistic_rate_for_noisy_channels_DNN_DF(datas, labels):
+    '''
+    dataset : H matrix without noise
+    labels : predicted parameters (Alpha, Pr, Ps)
+    #  Warning : rate is computed using y_hat not sqrt(y_hat) like opportunistic_rate_for_noisy_channels function
+
+    '''
+    final_rate = []
+    H_matrix = []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix, labels): 
+        data , y_hat = i[:,0:8], j
+        temp_rate = rate(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], y_hat[:,0], y_hat[:,1], y_hat[:,2])
+        final_rate.append(temp_rate)
+    return np.asarray(final_rate, dtype="float64")
+
+def primary_degradation_for_noisy_data_DNN_DF(datas, labels):
+    final_pdd = []
+    H_matrix = []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix, labels): 
+        data, y_hat = i[:,0:8], j
+        temp_pdd = primary_rate_DF(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], y_hat[:,0], y_hat[:,1], y_hat[:,2])
+        final_pdd.append(temp_pdd)
+        
+    return np.asarray(final_pdd, dtype="float64")
+
+
+def PARD_for_noisy_data_DNN_DF(datas, labels, Pp = 10.0):
+    """
+    Calculate primary rate for Noisy H Matrix
+    """
+    H_matrix, mean_pard, max_pard, mean_outage_pard, outage_pard = [], [], [], [], []
+
+    for i in range(labels.shape[0]):
+        H_matrix.append(datas)
+    H_matrix = np.asarray(H_matrix, dtype="float64")
+    
+    for i,j in zip(H_matrix,labels) : 
+        
+        data , label = i[:,0:8], j # j not j[:,8:12]
+        # label for primary_rate not sqrt label
+        N_P_Rate = primary_rate_DF(data[:,0], data[:,1], data[:,2], data[:,3], data[:,4], data[:,5], data[:,6], data[:,7], label[:,0], label[:,1], label[:,2])
+
+        P_Rate_max = C(data[:,1]*Pp) # data[:,1] tend for G_PP
+
+        temp_mean_pard, temp_max_pard, temp_mean_outage, outage = mean_max_outage_PARD(N_P_Rate, P_Rate_max)
+        mean_pard.append(temp_mean_pard)
+        max_pard.append(temp_max_pard)
+        mean_outage_pard.append(temp_mean_outage)
+        outage_pard.append(outage)
+    # doesn't multiply outage by 100    
+    return np.asarray(mean_pard, dtype="float64")*100, np.asarray(max_pard, dtype="float64")*100, np.asarray(mean_outage_pard, dtype="float64")*100, np.asarray(outage_pard, dtype="float64")*100
+
+def DNN_for_noisy_channels_DF(X, X_noised_train, hyperparameters, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    #X_noised_train, X_noised_val,hyperparameters, noise_levels = [0, 10**-1.5, 10**-1, 10**-0.5, 1, 10**0.5, 10**1, 10**1.5]):
+    # SNRs_db = [-10, -5, 0, 5, 10, 15, 20]
+    final_DNN_results = []
+    
+    ind = 0 
+    callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=20)
+    for x_noisy in X_noised_train : 
+   
+        model = get_model_DF(x_noisy, loss_DF_WN(hyperparameters["lambda"],\
+                                                 hyperparameters["tau"]),\
+                                                 hyperparameters["metrics"],\
+                                                 'sigmoid',\
+                                                 custom_sigmoid,\
+                                                 custom_sigmoid,\
+                                                 hyperparameters["learning_rate"])
+
+        history = model.fit(x_noisy, np.power(X, 2), epochs=hyperparameters["epochs"], batch_size=hyperparameters["batch_size"], validation_split=hyperparameters["validation_split"],callbacks=[callback])#validationhyperparameters["batch_size"]_split = VS
+        
+        model.save('weights_model/N_DNN_DF_'+str(SNRs_db[ind])+'.h5')
+        np.save('weights_model/N_DNN_DF_'+str(SNRs_db[ind]),history.history)
+        
+        ind+=1
+        
+        
+def DNN_for_noisy_channels_DF(X, X_noised_train, hyperparameters, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+
+    final_DNN_results = []
+    
+    ind = 0 
+    callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=20)
+    for x_noisy in X_noised_train : 
+   
+        model = get_model_DF(x_noisy, loss_DF_WN(hyperparameters["lambda"],\
+                                                 hyperparameters["tau"]),\
+                                                 hyperparameters["metrics"],\
+                                                 'sigmoid',\
+                                                 custom_sigmoid,\
+                                                 custom_sigmoid,\
+                                                 hyperparameters["learning_rate"])
+
+        history = model.fit(x_noisy, np.power(X, 2), epochs=hyperparameters["epochs"], batch_size=hyperparameters["batch_size"], validation_split=hyperparameters["validation_split"],callbacks=[callback])#validationhyperparameters["batch_size"]_split = VS
+        
+        model.save('weights_model/N_DNN_DF_'+str(SNRs_db[ind])+'.h5')
+        np.save('weights_model/N_DNN_DF_'+str(SNRs_db[ind]),history.history)
+        
+        ind+=1
+        
+def noised_DNN_pred_DF(X, mw_path, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    # SNRs_db = [-10, -5, 0, 5, 10, 15, 20]
+    final_predictions = []
+    tau = 0.25
+    for snr_item in SNRs_db : 
+        for noisy_X in X:
+            data = noisy_X[:,0:8]
+            model = tf.keras.models.load_model(mw_path+str(snr_item)+'.h5', custom_objects={'DF_loss':loss_DF_WN(Lambda,tau),'Primary_Achievable_Rate_Degradation_DF':Primary_Achievable_Rate_Degradation_DF,'Primary_ARDP':Primary_ARD_Percentage_DF,'throughput':Achievable_Rate_DF(tau),'V_Qos':QoS_Violation_DF(tau), "custom_sigmoid":custom_sigmoid})
+            temp_predictions = model.predict(data)
+            final_predictions.append(temp_predictions)
+    
+    return np.asarray(final_predictions, dtype="float64")
+
+
+
+def plot_history_noised_DNN(path_to_history, SNRs_db = [-10, -5, 0, 5, 10, 15, 20]):
+    # SNRs_db = [-10, -5, 0, 5, 10, 15, 20]
+    loss, val_loss = [], []
+    for item in SNRs_db:
+        history = np.load(path_to_history+str(item)+'.npy',allow_pickle='TRUE').item()
+        loss.append(history['loss'][:])
+        val_loss.append(history['val_loss'][:])
+    return loss, val_loss
