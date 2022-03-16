@@ -9,34 +9,7 @@ import numpy as np
 from functions import *
 
 
-def BF_A(Grp, Gpp, Gsr, Gpr, Gss, Grs, Gsp, Gps, Pr_max = 10.0, Ps_max = 10.0, Pp = 10.0):
-    ''' Bruteforce with QoS constraint'''
-    Alpha = np.linspace(0, np.sqrt(1.0), 100)
-    Pr = np.linspace(0, np.sqrt(Pr_max), 100)
-    Ps = np.linspace(0, np.sqrt(Ps_max), 100)
 
-
-    A,B,C = np.meshgrid(Alpha, Pr, Ps)
-   
-    # if QoS constraint respected
-    mask = (((Gsp*C**2)+(Grp*B**2))+2*(np.sqrt(Gsp*Grp)*A*C*B)) <= A_(Gpp)
-
-    
-    A = A[mask]
-    B = B[mask]
-    C = C[mask]
-    
-    SNR1 = FDFR(A, C, Gsr, Gpr) 
-    SNR2 = FDF2(A, C, B, Gss, Grs, Gps, Pp)
-    SNR = np.minimum(SNR1,SNR2)
-
-    ind = np.argmax(SNR)
-
-    SNR_opt, alpha_opt, pr_opt, ps_opt = SNR[ind], A[ind], B[ind], C[ind]
-    c = lambda t: (1/2*np.log2(1+t))
-    c_func = np.vectorize(c)
-    
-    return np.array([[Grp, Gpp, Gsr, Gpr, Gss, Grs, Gsp, Gps, c_func(SNR_opt), alpha_opt**2, pr_opt**2, ps_opt**2]])
 
 '''    
 uncomment if need it
@@ -131,5 +104,6 @@ def SA_MDB_DF(Grp, Gpp, Gsr, Gpr, Gss, Grs, Gsp, Gps, Pp = 10.0):
   return  res_analytique    
     
     
+
 
 
