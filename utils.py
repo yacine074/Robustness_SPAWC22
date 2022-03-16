@@ -312,6 +312,6 @@ def CF_V4(HR1, H11, H2R, H1R, H22, HR2, H21, H12, P2_max=10.0, PR_max=10.0):
     
     return HR1, H11, H2R, H1R, H22, HR2, H21, H12, Pr_opt, P2_opt, SNR
             
-    
+     
     
     
